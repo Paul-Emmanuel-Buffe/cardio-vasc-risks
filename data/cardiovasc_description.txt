@@ -1,0 +1,15 @@
+- AGE : age in number of days (integer)
+- HEIGHT : height in cm (integer)
+- WEIGHT : weight in kg (integer)
+- GENDER : gender, categorical (1: female, 2: male)
+- AP_HIGH : systolic blood pressure (integer)
+- AP_LOW : diastolic blood pressure (integer)
+- CHOLESTEROL : cholesterol level, categorical (1: normal, 2: above normal, 3: well above normal)
+- GLUCOSE : glucose level, categorical (1: normal, 2: above normal, 3: well above normal) 
+- SMOKE : if patient smokes or not, categorical (0: no, 1: yes)
+- ALCOHOL : if patient drinks alcohol or not, categorical (0: no, 1: yes)
+- PHYSICAL_ACTIVITY : if patient is active or not, categorical (0: no, 1: yes)
+ 
+and target variable
+
+- CARDIO_DISEASE : if patient got the disease or not, categorical (0: no, 1: yes)
