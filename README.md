@@ -1,34 +1,54 @@
-# Cardiovascular Risk Prediction: Logistic Regression Analysis
+# Cardiovascular Risk Prediction System
 
-## Project Overview
-This project is developed within the framework of **preventive medicine**. Its primary objective is to design a diagnostic tool capable of predicting cardiovascular risks using a binary classification approach. 
+## Description du projet
+Ce projet implémente un pipeline complet (end-to-end) d'ingestion de données, d'analyse exploratoire et de modélisation prédictive pour l'évaluation des risques cardio-vasculaires. L'objectif est de concevoir un classifieur binaire capable d'émettre une probabilité de risque clinique en optimisant le compromis entre rigueur statistique et contraintes du domaine médical (minimisation des faux négatifs).
 
-In France, cardiovascular diseases represent the second leading cause of mortality. Between 300,000 and 400,000 cardiovascular accidents occur annually, one-third of which are fatal. This tool leverages machine learning to assist in early detection and provide lifestyle recommendations to patients.
+Le projet compare trois approches de modélisation : une régression logistique industrielle (Scikit-Learn), une régression logistique codée "from scratch" intégrant une régularisation L2, et un modèle non linéaire (Random Forest).
 
-## Technical Context: Logistic Regression
-The core of this study relies on **Logistic Regression**, a statistical method used to predict a binary dependent variable (values such as 0/1, True/False, or Yes/No) based on quantitative explanatory variables. Unlike linear regression, it focuses on classification rather than continuous value prediction.
+## Stack Technique
+- Langage : Python 3.10+
+- Base de données : PostgreSQL 18 (déploiement conteneurisé via Docker)
+- Ingestion & ORM : Psycopg2, SQLAlchemy
+- Data Science & ML : Pandas, NumPy, Scikit-Learn
+- Visualisation : Matplotlib, Seaborn
 
-## Risk Factor Analysis
-The model analyzes a network of 12 cardiovascular risk factors, categorized into four distinct groups based on their interactions:
+## Structure du dépôt
+- `data/` : Répertoire contenant le jeu de données brut (`cardio_train.csv`).
+- `docker-compose.yml` : Configuration du conteneur PostgreSQL (mappage du port externe sur le 5433).
+- `notebooks/exploration.ipynb` : Ingestion des données brutes, validation des schémas SQL, analyse descriptive, traitement des valeurs aberrantes physiologiques et étude des distributions.
+- `notebooks/modelisation.ipynb` : Pipeline de feature engineering, encodage, validation croisée, entraînement, comparaison des modèles (Scikit-Learn vs Scratch vs Random Forest) et simulation d'inférence clinique.
+- `requirements.txt` : Liste des dépendances Python requises.
 
-1. **Non-modifiable factors**: Sex, age, and family history. These predict other factors but cannot be modified by the patient.
-2. **Lifestyle factors**: Smoking, sedentary behavior, and alcohol abuse. These predict many other factors but are rarely predicted by them.
-3. **Upstream clinical factors**: Sleep disorders, obesity, and depression. These both predict and are predicted by numerous factors.
-4. **Downstream clinical factors**: Hypertension, dyslipidemia, and diabetes. These are predicted by many factors but predict very few themselves.
+## Architecture et Pipeline de Déploiement
 
-## Methodology and Evaluation
-The development process follows a structured pipeline:
-* **Data Preprocessing**: Handling missing values, outliers, and duplicates to ensure medical consistency.
-* **Exploratory Data Analysis (EDA)**: Visualizing factor interactions using Matplotlib, Seaborn, or Plotly.
-* **Modeling**: 
-    * Implementation using **Scikit-Learn** with hyperparameter tuning.
-    * Development of a **custom Python class** for logistic regression without external ML libraries.
-* **Performance Metrics**: Evaluation using a confusion matrix, accuracy, recall, and classification reports.
+### 1. Ingestion et Stockage (Cellules 1 à 6 de l'Exploration)
+Le fichier brut CSV est parsé et injecté en masse (bulk insert via `execute_values`) dans une base PostgreSQL relationnelle. 
+Une table nettoyée (`patients_cleaned`) est générée directement en SQL via une requête CTAS (Create Table As Select) appliquant des filtres physiologiques stricts :
+- Exclusion des pressions artérielles négatives ou cliniquement impossibles.
+- Cohérence hémodynamique : Pression Artérielle Systolique (PAS) obligatoirement supérieure à la Pression Artérielle Diastolique (PAD) + 10 mmHg.
+- Filtrage des aberrations anthropométriques (tailles et poids physiologiquement invalides).
+- Calcul natif de l'Indice de Masse Corporelle (IMC/BMI) et de son interaction avec le cholestérol.
 
-## Repository Structure
-* `notebooks/exploration.ipynb`: Data cleaning, analysis, and visualization.
-* `notebooks/modelisation.ipynb`: Model training, custom class implementation, and performance evaluation.
-* `data/`: Patient datasets collected through medical partnerships.
+### 2. Prétraitement et Feature Engineering (Modelisation)
+- Encodage : Application d'un One-Hot Encoding (`pd.get_dummies`) avec suppression du premier témoin (`drop_first=True`) sur les variables catégorielles (`cholesterol`, `gluc`, `gender`) afin d'éviter les pièges de multicolinéarité.
+- Alignement : Structuration d'une matrice de caractéristiques $X$ isolant les variables explicatives de la cible binaire $y$ (`cardio`).
 
-## Conclusion
-The final model provides a binary diagnostic output to determine if a subject is at risk. This includes a specific case study analysis for a 53-year-old male subject ("Arthur") to validate the model's predictive capabilities in a real-world scenario.
+### 3. Protocole d'Évaluation et Validation Croisée
+Pour garantir la fiabilité scientifique et éviter toute fuite de données (*Data Leakage*), le protocole suivant est implémenté au sein d'une validation croisée stratifiée à 5 plis (`StratifiedKFold`) :
+- L'ajustement d'échelle (`StandardScaler`) est instancié et ajusté (`fit_transform`) exclusivement sur le sous-ensemble d'entraînement de chaque pli, puis appliqué (`transform`) sur le sous-ensemble de test.
+- Le déséquilibre des classes est traité via l'argument `class_weight='balanced'`.
+
+### 4. Optimisation Clinique du Seuil de Décision
+Dans un contexte médical, un faux négatif (patient à risque non détecté) est plus critique qu'un faux positif. Le seuil de classification par défaut (0.50) a été abaissé à **0.40** suite à l'analyse des courbes ROC AUC et Precision-Recall. Cet arbitrage permet de faire passer la sensibilité (Recall) de la classe critique à plus de 80%, tout en maintenant une précision acceptable (67.5%).
+
+### 5. Algorithme From Scratch
+La classe `LogisticRegressionScratch` implémente les fonctions mathématiques de base de la régression logistique sans bibliothèque tierce :
+- Fonction d'activation : Sigmoïde avec écrêtage (`np.clip`) pour prévenir les débordements numériques (*overflow*).
+- Fonction de coût : Entropie croisée binaire (Binary Cross-Entropy / Log-Loss) combinée à une pénalité de régularisation L2 (Ridge).
+- Optimisation : Descente de gradient batch avec critères de convergence basés sur une tolérance d'évolution du coût ($\Delta \text{Loss} < 10^{-6}$).
+
+## Installation et Exécution
+
+1. Initialiser le conteneur de la base de données :
+```bash
+docker-compose up -d
